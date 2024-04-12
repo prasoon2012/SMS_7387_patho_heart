@@ -1,0 +1,293 @@
+---
+title: "SMS_7387_nucleus"
+author: "Prasoon Agarwal"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Required libraries
+
+```{r warning=FALSE, include=FALSE}
+# Set the maximum vector size to 56 GB
+options(max.vsize = "56000M")
+# Check the current value of max.vsize
+getOption("max.vsize")
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(ggplot2)
+library(tibble)
+library(sctransform)
+library(plyr)
+library(DESeq2)
+```
+
+## Loading data.  
+
+```{r}
+#load('../SMS_7387/Robjects/GSE183852_DCM_Nuclei.Robj')
+Cardio_and_Fibro_nuclei_integrated <- readRDS('../data/raw_external/Cardio_and_Fibro_Nuclei_integrated.RDS')
+View(Cardio_and_Fibro_nuclei_integrated)
+```
+
+```{r warning=FALSE}
+table(Cardio_and_Fibro_nuclei_integrated@meta.data$orig.ident)
+table(Cardio_and_Fibro_nuclei_integrated@meta.data$Names)
+table(Cardio_and_Fibro_nuclei_integrated@meta.data$Sex)
+class(Cardio_and_Fibro_nuclei_integrated)
+View(Cardio_and_Fibro_nuclei_integrated)
+```
+
+```{r}
+DimPlot(Cardio_and_Fibro_nuclei_integrated , reduction = 'umap', split.by = 'Sex')
+```
+
+
+```{r}
+# Idents(Cardio_and_Fibro_nuclei_integrated)
+# table(Cardio_and_Fibro_nuclei_integrated)
+# Compute differential expression
+markers_genes <- FindAllMarkers(
+    Cardio_and_Fibro_nuclei_integrated,
+    log2FC.threshold = 0.2,
+    test.use = "wilcox",
+    min.pct = 0.1,
+    min.diff.pct = 0.2,
+    only.pos = F,
+    max.cells.per.ident = 10000,
+    assay = "RNA"
+)
+
+write.csv(markers_genes, 'markers_genes.csv')
+
+# # Compute differential expression
+# # Perform differential expression analysis
+# DGE_Cardio_vs_Fibro <- FindMarkers(Cardio_and_Fibro_nuclei_integrated,
+#                                     ident.1 = "Cardiomyocytes",
+#                                     ident.2 = "Fibroblasts",
+#                                     logfc.threshold = 0.2,
+#                                     test.use = "wilcox",
+#                                     min.pct = 0.1,
+#                                     min.diff.pct = 0.2,
+#                                     assay = "RNA")
+# 
+# #Define as Cardiomyocytes or Fibroblasts in the df and add a gene column
+DGE_Cardio_vs_Fibro$direction <- ifelse(DGE_Cardio_vs_Fibro$avg_log2FC > 0,
+                                        "Cardiomyocytes", "Fibroblasts")
+
+DGE_Cardio_vs_Fibro$gene <- rownames(DGE_Cardio_vs_Fibro)
+
+write.csv(DGE_Cardio_vs_Fibro, 'DGE_Cardio_vs_Fibro.csv')
+ 
+DGE_Cardio_vs_Fibro %>%
+    group_by(direction) %>%
+    top_n(5, p_val) %>%
+    arrange(direction) -> top5_DGE
+
+# # Assuming you have a Seurat object named Cardio_and_Fibro_nuclei_integrated and top5_DGE contains the top 5 differentially expressed genes
+# 
+# # Create the violin plot
+VlnPlot(object = Cardio_and_Fibro_nuclei_integrated,
+        features = as.character(top5_DGE$gene),  
+        group.by = "Names",
+        assay = "RNA",ncol = 4,pt.size = 0.1)
+
+```
+
+
+Subsetting the Cardiomyocytes and Fibroblasts and performing the differential analysis based on Sex
+```{r}
+Cardio_only <- subset(Cardio_and_Fibro_nuclei_integrated, subset = Names %in% "Cardiomyocytes")
+
+Fibro_only <- subset(Cardio_and_Fibro_nuclei_integrated, subset = Names %in% "Fibroblasts")
+
+Idents(Cardio_only) <- "Sex"
+View(Cardio_only)
+## Perform differential expression analysis
+DGE_Cardio_Female_vs_Male <- FindMarkers(Cardio_only,
+                                    ident.1 = "Female",
+                                    ident.2 = "Male",
+                                    logfc.threshold = 0.2,
+                                    test.use = "wilcox",
+                                    min.pct = 0.1,
+                                    min.diff.pct = 0.2,
+                                    assay = "RNA")
+
+#Define as Cardiomyocytes or Fibroblasts in the df and add a gene column
+DGE_Cardio_Female_vs_Male$direction <- ifelse(DGE_Cardio_Female_vs_Male$avg_log2FC > 0,
+                                        "Female", "Male")
+
+DGE_Cardio_Female_vs_Male$gene <- rownames(DGE_Cardio_Female_vs_Male)
+
+write.csv(DGE_Cardio_Female_vs_Male,'../results/tables/Cardio_markers_female_vs_male.csv')
+
+DGE_Cardio_Female_vs_Male %>%
+    group_by(direction) %>%
+    top_n(5, p_val) %>%
+    arrange(direction) -> top5_DGE
+
+# Assuming you have a Seurat object named Cardio_and_Fibro_nuclei_integrated and top5_DGE contains the top 5 differentially expressed genes
+
+# Create the violin plot
+VlnPlot(object = Cardio_and_Fibro_nuclei_integrated,
+        features = as.character(top5_DGE$gene), # Convert gene names to character if 
+        group.by = "Sex",
+        assay = "RNA", ncol = 5)
+
+```
+
+
+Differential Analysis in Fibroblast cells based on sex
+```{r}
+Idents(Fibro_only) <- "Sex"
+#View(Fibro_only)
+
+DGE_Fibro_Female_vs_Male <- FindMarkers(Fibro_only,
+                                    ident.1 = "Female",
+                                    ident.2 = "Male",
+                                    logfc.threshold = 0.2,
+                                    test.use = "wilcox",
+                                    min.pct = 0.1,
+                                    min.diff.pct = 0.2,
+                                    assay = "RNA")
+#Define as Cardiomyocytes or Fibroblasts in the df and add a gene column
+DGE_Fibro_Female_vs_Male$direction <- ifelse(DGE_Fibro_Female_vs_Male$avg_log2FC > 0,
+                                        "Female", "Male")
+
+DGE_Fibro_Female_vs_Male$gene <- rownames(DGE_Fibro_Female_vs_Male)
+
+write.csv(DGE_Fibro_Female_vs_Male,'../results/tables/Fibro_markers_female_vs_male.csv')
+
+DGE_Fibro_Female_vs_Male %>%
+    group_by(direction) %>%
+    top_n(5, p_val) %>%
+    arrange(direction) -> top5_DGE
+
+# Assuming you have a Seurat object named Cardio_and_Fibro_nuclei_integrated and top5_DGE contains the top 5 differentially expressed genes
+
+# Create the violin plot
+VlnPlot(object = Cardio_and_Fibro_nuclei_integrated,
+        features = as.character(top5_DGE$gene), # Convert gene names to character if 
+        group.by = "Sex",
+        assay = "RNA", ncol = 5)
+```
+Here we are reading the list of genes line by line and then perfroming the differential analysis 
+```{r warning=FALSE}
+# Read the file containing the list of genes
+gene_list <- readLines("../data/raw_external/1_prio_steroidogenic_human_genes.txt")
+
+# Subset Seurat object to include only the specified genes
+Cardio_seurat_subset <- Cardio_only[gene_list, ]
+#View(Cardio_seurat_subset)
+# # Perform differential expression analysis, grouping by 'Sex'
+de_results <- FindMarkers(
+  object =Cardio_seurat_subset,
+  ident.1 = "Female",
+  ident.2 = "Male",
+  logfc.threshold = 0.25, # Adjust log-fold change threshold as needed
+  test.use = "wilcox",
+  min.pct = 0.1,
+  min.diff.pct = 0.2,
+  assay = "RNA"
+)
+# 
+# # Visualize expression levels of specified genes
+# VlnPlot(
+#   object = Cardio_seurat_subset,
+#   features = gene_list,
+#   group.by = "Sex",
+#   assay = "RNA",
+#   pt.size = 0.1
+# )
+
+# Subset Seurat object for female samples
+female_samples <- Cardio_seurat_subset[,Cardio_seurat_subset$Sex == "Female" ]
+# View(female_samples)
+# Subset Seurat object for male samples
+male_samples <- Cardio_seurat_subset[,Cardio_seurat_subset$Sex == "Male" ]
+# View(male_samples)
+# Extract count values separately for female and male samples
+#female_counts <- female_samples@assays$RNA@counts
+# average_female_counts <- rowMeans(female_samples@assays$RNA@counts)
+
+#male_counts <- male_samples@assays$RNA@counts
+# average_male_counts <- rowMeans(male_samples@assays$RNA@counts)
+
+
+# Calculate total counts for each gene across cells within each sample
+total_female_counts <- rowSums(female_samples@assays$RNA@counts)
+total_female_ncounts <- female_samples@meta.data[["nCount_RNA"]]
+View(total_female_ncounts)
+
+total_male_counts <- rowSums(male_samples@assays$RNA@counts)
+
+write.table(total_female_counts, file = "../results/tables/Cardio_female_total_counts.txt", row.names = TRUE, sep = "\t")
+
+write.table(total_female_ncounts, file = "../results/tables/Cardio_female_total_ncounts.txt", row.names = TRUE, sep = "\t")
+
+write.table(total_male_counts, file = "../results/tables/Cardio_male_total_counts.txt", row.names = TRUE, sep = "\t")
+# Now 'female_counts' and 'male_counts' contain the count values for female and male samples, respectively
+
+# write.table(female_counts, file = "Cardio_female_counts.txt", row.names = TRUE, sep = "\t")
+# write.table(average_female_counts, file = "Cardio_female_counts_avg.txt", row.names = TRUE, sep = "\t")
+# 
+# write.table(male_counts, file = "Cardio_male_counts.txt", row.names = TRUE, sep = "\t")
+# 
+# write.table(average_male_counts, file = "Cardio_male_counts_avg.txt", row.names = TRUE, sep = "\t")
+# # Combine female and male counts into a single table
+# combined_counts <- cbind(female_counts, male_counts)
+# 
+# write.csv(combined_counts, file = "combined_counts.csv", row.names = TRUE)
+```
+
+```{r warning=FALSE}
+# Read the file containing the list of genes
+gene_list <- readLines("../data/raw_external/1_prio_steroidogenic_human_genes.txt")
+
+# Subset Seurat object to include only the specified genes
+Fibro_seurat_subset <- Fibro_only[gene_list, ]
+
+# Subset Seurat object for female samples
+female_samples <- Fibro_seurat_subset[,Fibro_seurat_subset$Sex == "Female" ]
+# View(female_samples)
+# Subset Seurat object for male samples
+male_samples <- Fibro_seurat_subset[,Fibro_seurat_subset$Sex == "Male" ]
+
+# Calculate total counts for each gene across cells within each sample
+total_female_counts <- rowSums(female_samples@assays$RNA@counts)
+total_male_counts <- rowSums(male_samples@assays$RNA@counts)
+
+write.table(total_female_counts, file = "../results/tables/Fibro_female_total_counts.txt", row.names = TRUE, sep = "\t")
+
+write.table(total_male_counts, file = "../results/tables/Fibro_male_total_counts.txt", row.names = TRUE, sep = "\t")
+
+```
+
+```{r}
+FeaturePlot(object =Cardio_seurat_subset , 
+            features = c("COMT"),cols = c("grey", "red"), split.by = "Sex")
+```
+
+```{r}
+# Count the number of cells in males and females within cardiomyocytes
+num_cells_male <- sum(Cardio_only@meta.data$Sex == "Male")
+num_cells_female <- sum(Cardio_only@meta.data$Sex == "Female")
+
+# Print the number of cells in males and females
+cat("Number of cells in males:", num_cells_male, "\n")
+cat("Number of cells in females:", num_cells_female, "\n")
+
+
+# Count the number of cells in males and females within cardiomyocytes
+num_cells_male <- sum(Fibro_only@meta.data$Sex == "Male")
+num_cells_female <- sum(Fibro_only@meta.data$Sex == "Female")
+
+# Print the number of cells in males and females
+cat("Number of cells in males:", num_cells_male, "\n")
+cat("Number of cells in females:", num_cells_female, "\n")
+```
+
